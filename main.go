@@ -122,8 +122,8 @@ func main() {
 		jiraIssue := addIssue(jiraClient, issue)
 		log.Printf("Created ticket: %s", jiraIssue.Key)
 
-		//Notify on Slack
-		sendSlackNotification(api, "C07M23ME9U0",
+		//Notify on Slack (should use the actual service channel, not the default)
+		sendSlackNotification(api, viper.GetString("slack.defaultChannel"),
 			fmt.Sprintf("Migration request for: %s\nJira ticket: %sbrowse/%s",
 				service.ServiceId,
 				viper.GetString("jira.baseurl"),
