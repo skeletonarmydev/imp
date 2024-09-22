@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/csv"
 	"encoding/json"
 	"flag"
@@ -11,6 +12,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"text/template"
 )
 
 type Issue struct {
@@ -75,10 +77,30 @@ func main() {
 	//List of repositories to create tickets for
 	repoFile := flag.String("file", "", "list of repositories")
 
+	//template for jira tickets
+	jiraTemplateFile := flag.String("jtemp", "", "jira ticket template")
+
+	//template for slack message
+	slackTemplateFile := flag.String("stemp", "", "slack message template")
+
 	flag.Parse()
 
 	if *repoFile == "" {
 		println("Error: No repositories specified")
+		println("Usage: ./imp:")
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+
+	if *jiraTemplateFile == "" {
+		println("Error: No jira template specified")
+		println("Usage: ./imp:")
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+
+	if *slackTemplateFile == "" {
+		println("Error: No slack message specified")
 		println("Usage: ./imp:")
 		flag.PrintDefaults()
 		os.Exit(1)
@@ -108,27 +130,41 @@ func main() {
 	//Fetch the list of repositories from the file (first column only)
 	repositoryList := readRepositoryFile(*repoFile)
 
+	//Get jira template
+	jiraTemplateContent := getTemplate(*jiraTemplateFile)
+	jiraTmpl, err := template.New("jiraTemplate").Parse(jiraTemplateContent)
+
+	//Get slack message template
+	slackTemplateContent := getTemplate(*slackTemplateFile)
+	slackTmpl, err := template.New("slackTemplate").Parse(slackTemplateContent)
+
 	//Loop and find the services associated to the repositories
 	for _, itm := range repositoryList {
 		service := repoLookup[itm]
+
+		buf := bytes.NewBufferString("")
+		data := make(map[string]string)
+		data["repository"] = itm
+
+		err = jiraTmpl.Execute(buf, data)
 
 		//Create Jira Issue
 		issue := Issue{
 			Name:        fmt.Sprintf("Migration: %s", service.ServiceId),
 			Type:        "Task",
 			ProjectKey:  viper.GetString("jira.projectKey"),
-			Description: fmt.Sprintf("Code Repository: %s ", itm),
+			Description: buf.String(),
 		}
 		jiraIssue := addIssue(jiraClient, issue)
 		log.Printf("Created ticket: %s", jiraIssue.Key)
 
+		data["jira_ticket"] = jiraIssue.Key
+
+		slackMsg := bytes.NewBufferString("")
+		err = slackTmpl.Execute(slackMsg, data)
+
 		//Notify on Slack (should use the actual service channel, not the default)
-		sendSlackNotification(api, viper.GetString("slack.defaultChannel"),
-			fmt.Sprintf("Migration request for: %s\nJira ticket: %sbrowse/%s",
-				service.ServiceId,
-				viper.GetString("jira.baseurl"),
-				jiraIssue.Key),
-		)
+		sendSlackNotification(api, viper.GetString("slack.defaultChannel"), slackMsg.String())
 	}
 
 }
@@ -167,6 +203,16 @@ func readRepositoryFile(fileName string) []string {
 	}
 
 	return repositories
+}
+
+func getTemplate(fileName string) string {
+
+	dat, err := os.ReadFile(fileName)
+	if err != nil {
+		panic(err)
+	}
+
+	return string(dat)
 }
 
 func fetchServices() []Service {
