@@ -145,6 +145,8 @@ func main() {
 		buf := bytes.NewBufferString("")
 		data := make(map[string]string)
 		data["repository"] = itm
+		data["service"] = service.ServiceId
+		data["team"] = service.Team.TeamId
 
 		err = jiraTmpl.Execute(buf, data)
 
@@ -171,9 +173,15 @@ func main() {
 
 func sendSlackNotification(api *slack.Client, channelId string, message string) {
 
+	params := slack.PostMessageParameters{
+		UnfurlLinks: false,
+		UnfurlMedia: false,
+	}
+
 	channelID, timestamp, err := api.PostMessage(
 		channelId,
 		slack.MsgOptionText(message, false),
+		slack.MsgOptionPostMessageParameters(params),
 	)
 
 	if err != nil {
